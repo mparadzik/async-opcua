@@ -190,9 +190,11 @@ pub fn legacy_password_decrypt(
              * zeroes according to the 1.04.1 specification errata, chapter 3.
              */
             if !padding_bytes.iter().all(|&x| x == 0) {
-                return Err(Error::decoding("Non-zero padding bytes in decrypted password"));
+                return Err(Error::decoding(
+                    "Non-zero padding bytes in decrypted password",
+                ));
             } else {
-                dst = dst[..plaintext_size + 4].to_vec();
+                dst.truncate(plaintext_size + 4);
                 actual_size = dst.len();
             }
         }
