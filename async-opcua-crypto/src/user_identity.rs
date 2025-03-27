@@ -167,16 +167,39 @@ pub fn legacy_password_decrypt(
         // Decrypt the message
         let src = secret.value.as_ref().unwrap();
         let mut dst = vec![0u8; src.len()];
-        let actual_size = server_key
+        let mut actual_size = server_key
             .private_decrypt(src, &mut dst, padding)
             .map_err(Error::decoding)?;
 
         let mut dst = Cursor::new(dst);
         let plaintext_size = read_u32(&mut dst)? as usize;
+
+        /* Remove padding
+         *
+         * 7.36.2.2 Legacy Encrypted Token Secret Format: A Client should not add any
+         * padding after the secret. If a Client adds padding then all bytes shall
+         * be zero. A Server shall check for padding added by Clients and ensure
+         * that all padding bytes are zeros.
+         *
+         */
+        let mut dst = dst.into_inner();
+        if actual_size > plaintext_size + 4 {
+            let padding_bytes = &dst[plaintext_size + 4..];
+            /*
+             * If the Encrypted Token Secret contains padding, the padding must be
+             * zeroes according to the 1.04.1 specification errata, chapter 3.
+             */
+            if !padding_bytes.iter().all(|&x| x == 0) {
+                return Err(Error::decoding("Non-zero padding bytes in decrypted password"));
+            } else {
+                dst = dst[..plaintext_size + 4].to_vec();
+                actual_size = dst.len();
+            }
+        }
+
         if plaintext_size + 4 != actual_size {
             Err(Error::decoding("Invalid plaintext size"))
         } else {
-            let dst = dst.into_inner();
             let nonce_len = server_nonce.len();
             let nonce_begin = actual_size - nonce_len;
             let nonce = &dst[nonce_begin..(nonce_begin + nonce_len)];
